@@ -19,7 +19,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cross-compilation targets
+      - name: Add cross-compilation targets
         run: |
           rustup target add x86_64-unknown-linux-gnu
           rustup target add x86_64-pc-windows-gnu
@@ -30,18 +30,25 @@ jobs:
 
       - name: Package artifacts
         run: |
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            powershell Compress-Archive -Path target/release/* -DestinationPath release-windows.zip
-          elif [[ "${{ runner.os }}" == "macOS" ]]; then
-            tar -czf release-macos.tar.gz -C target/release .
+          mkdir -p release
+          if ([ "${{ runner.os }}" == "Windows" ]); then
+            powershell Compress-Archive -Path target/release/* -DestinationPath release/stopwatch-windows.zip
+          elif ([ "${{ runner.os }}" == "macOS" ]); then
+            tar -czf release/stopwatch-macos.tar.gz -C target/release .
           else
-            tar -czf release-linux.tar.gz -C target/release .
+            tar -czf release/stopwatch-linux.tar.gz -C target/release .
           fi
 
-      - name: Upload release artifact
-        uses: actions/upload-artifact@v4
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
         with:
-          name: release-${{ matrix.os }}
-          path: |
-            release-*.zip
-            release-*.tar.gz
+          tag_name: ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release/stopwatch-*.zip, release/stopwatch-*.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
