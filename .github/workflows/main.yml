@@ -1,0 +1,78 @@
+name: Rust Cross-Compile Native
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on version tags like v1.0.0
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Build Linux release
+        run: cargo build --release
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stopwatch-x86_64-unknown-linux-gnu
+          path: target/release/
+
+  build-windows:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Install mingw-w64
+        run: sudo apt-get update && sudo apt-get install -y mingw-w64
+
+      - name: Build Windows release
+        run: cargo build --release --target x86_64-pc-windows-gnu
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stopwatch-x86_64-pc-windows-gnu
+          path: target/x86_64-pc-windows-gnu/release/
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Build macOS release
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stopwatch-x86_64-apple-darwin
+          path: target/x86_64-apple-darwin/release/
