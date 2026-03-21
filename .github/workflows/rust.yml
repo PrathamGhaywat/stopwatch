@@ -1,54 +1,141 @@
-# .github/workflows/release.yml
-name: Rust Cross-Platform Release
+name: Release
 
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
-  release:
-    runs-on: ${{ matrix.os }}
+  build:
+    name: Build ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.os }}
+
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        platform:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary_ext: ""
+            archive_ext: "tar.gz"
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary_ext: ".exe"
+            archive_ext: "zip"
+          - name: macos-x86_64
+            os: macos-latest
+            target: x86_64-apple-darwin
+            binary_ext: ""
+            archive_ext: "dmg"
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.target }}
 
-      - name: Add cross-compilation targets
-        run: |
-          rustup target add x86_64-unknown-linux-gnu
-          rustup target add x86_64-pc-windows-gnu
-          rustup target add x86_64-apple-darwin
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache target
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-target-${{ matrix.platform.target }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build release
-        run: cargo build --release
+        run: cargo build --release --target ${{ matrix.platform.target }}
 
-      - name: Package artifacts
+      - name: Determine binary name
+        id: bin_name
+        shell: bash
         run: |
-          mkdir -p release
-          if ([ "${{ runner.os }}" == "Windows" ]); then
-            powershell Compress-Archive -Path target/release/* -DestinationPath release/stopwatch-windows.zip
-          elif ([ "${{ runner.os }}" == "macOS" ]); then
-            tar -czf release/stopwatch-macos.tar.gz -C target/release .
-          else
-            tar -czf release/stopwatch-linux.tar.gz -C target/release .
-          fi
+          BINARY_NAME=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[0].targets[] | select(.kind[] | contains("bin")) | .name' \
+            | head -n 1)
+          echo "name=${BINARY_NAME}" >> "$GITHUB_OUTPUT"
+
+      # Package Linux binary as tar.gz
+      - name: Package Linux archive
+        if: startsWith(matrix.platform.name, 'linux-')
+        shell: bash
+        run: |
+          BIN="${{ steps.bin_name.outputs.name }}"
+          TARGET="${{ matrix.platform.target }}"
+          mkdir -p dist
+          cp "target/${TARGET}/release/${BIN}${{ matrix.platform.binary_ext }}" "dist/${BIN}"
+          tar -czf "dist/${BIN}-${TARGET}.tar.gz" -C dist "${BIN}"
+
+      # Package Windows binary as zip
+      - name: Package Windows archive
+        if: startsWith(matrix.platform.name, 'windows-')
+        shell: bash
+        run: |
+          BIN="${{ steps.bin_name.outputs.name }}"
+          TARGET="${{ matrix.platform.target }}"
+          mkdir -p dist
+          cp "target/${TARGET}/release/${BIN}${{ matrix.platform.binary_ext }}" "dist/${BIN}.exe"
+          powershell -Command "Compress-Archive dist\\${BIN}.exe dist\\${BIN}-${TARGET}.zip"
+
+      # Build a .dmg on macOS
+      - name: Create app bundle (macOS)
+        if: startsWith(matrix.platform.name, 'macos-')
+        shell: bash
+        run: |
+          BIN="${{ steps.bin_name.outputs.name }}"
+          TARGET="${{ matrix.platform.target }}"
+          APP_NAME="${BIN}.app"
+          mkdir -p "dist/${APP_NAME}/Contents/MacOS"
+          cp "target/${TARGET}/release/${BIN}" "dist/${APP_NAME}/Contents/MacOS/${BIN}"
+          chmod +x "dist/${APP_NAME}/Contents/MacOS/${BIN}"
+
+      - name: Create DMG (macOS)
+        if: startsWith(matrix.platform.name, 'macos-')
+        uses: L-Super/create-dmg-actions@v1.0.3
+        with:
+          dmg_name: ${{ steps.bin_name.outputs.name }}-${{ matrix.platform.target }}.dmg
+          src_dir: dist/${{ steps.bin_name.outputs.name }}.app
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform.name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.dmg
+          if-no-files-found: ignore
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref_name }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload Release Assets
-        uses: softprops/action-gh-release@v1
-        with:
-          files: release/stopwatch-*.zip, release/stopwatch-*.tar.gz
+          files: artifacts/**/*.{tar.gz,zip,dmg}
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
