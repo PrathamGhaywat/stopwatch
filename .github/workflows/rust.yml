@@ -5,6 +5,9 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -99,8 +102,8 @@ jobs:
           TARGET="${{ matrix.platform.target }}"
           APP_NAME="${BIN}.app"
           mkdir -p "dist/${APP_NAME}/Contents/MacOS"
-          cp "target/${TARGET}/release/${BIN}" "dist/${BIN}"
-          chmod +x "dist/${BIN}"
+          cp "target/${TARGET}/release/${BIN}" "dist/${APP_NAME}/Contents/MacOS/${BIN}"
+          chmod +x "dist/${APP_NAME}/Contents/MacOS/${BIN}"
 
       - name: Create DMG (macOS)
         if: startsWith(matrix.platform.name, 'macos-')
@@ -134,7 +137,10 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: artifacts/**/*.{tar.gz,zip,dmg}
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
+            artifacts/**/*.dmg
           draft: false
           prerelease: false
         env:
