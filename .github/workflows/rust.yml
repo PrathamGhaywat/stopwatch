@@ -99,8 +99,8 @@ jobs:
           TARGET="${{ matrix.platform.target }}"
           APP_NAME="${BIN}.app"
           mkdir -p "dist/${APP_NAME}/Contents/MacOS"
-          cp "target/${TARGET}/release/${BIN}" "dist/${APP_NAME}/Contents/MacOS/${BIN}"
-          chmod +x "dist/${APP_NAME}/Contents/MacOS/${BIN}"
+          cp "target/${TARGET}/release/${BIN}" "dist/${BIN}"
+          chmod +x "dist/${BIN}"
 
       - name: Create DMG (macOS)
         if: startsWith(matrix.platform.name, 'macos-')
